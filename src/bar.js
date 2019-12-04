@@ -23,6 +23,7 @@ export default class Bar {
     prepare_values() {
         this.invalid = this.task.invalid;
         this.height = this.gantt.options.bar_height;
+        this.image_size = this.gantt.options.bar_height - 5;
         this.x = this.compute_x();
         this.y = this.compute_y();
         this.corner_radius = this.gantt.options.bar_corner_radius;
@@ -68,9 +69,20 @@ export default class Bar {
 
     draw() {
         this.draw_bar();
-        this.draw_progress_bar();
+
+        if (this.gantt.options.progress) {
+            this.draw_progress_bar();
+        }
+    
         this.draw_label();
-        this.draw_resize_handles();
+
+        if (this.task.thumbnail) {
+            this.draw_thumbnail();
+        }
+
+        if (this.gantt.options.resizing) {
+            this.draw_resize_handles();
+        }
     }
 
     draw_bar() {
@@ -101,7 +113,7 @@ export default class Bar {
             height: this.height,
             rx: this.corner_radius,
             ry: this.corner_radius,
-            class: 'bar-progress',
+            class: 'bar-progress-gantt',
             append_to: this.bar_group
         });
 
@@ -109,8 +121,17 @@ export default class Bar {
     }
 
     draw_label() {
+        let x_coord, y_coord;
+        let padding = 5;
+
+        if (this.task.img) {
+            x_coord = this.x + this.image_size + padding; 
+        } else {
+            x_coord = this.x + 5;
+        }
+
         createSVG('text', {
-            x: this.x + this.width / 2,
+            x: x_coord,
             y: this.y + this.height / 2,
             innerHTML: this.task.name,
             class: 'bar-label',
@@ -119,6 +140,48 @@ export default class Bar {
         // labels get BBox in the next tick
         requestAnimationFrame(() => this.update_label_position());
     }
+
+    draw_thumbnail() {
+        let x_offset = 10, y_offset = 2;
+        let defs, clipPath;
+
+        defs = createSVG('defs', {
+            append_to: this.bar_group
+        });
+
+        createSVG('rect', {
+            id: 'rect_' + this.task.id,
+            x: this.x + x_offset,
+            y: this.y + y_offset,
+            width: this.image_size,
+            height: this.image_size,
+            rx: '15',
+            class: 'img_mask',
+            append_to: defs
+        });
+
+        clipPath = createSVG('clipPath', {
+            id: 'clip_' + this.task.id,
+            append_to: defs
+        });
+
+        createSVG('use', {
+            href: '#rect_' + this.task.id,
+            append_to: clipPath
+        });
+
+        createSVG('image', {
+            x: this.x + x_offset,
+            y: this.y + y_offset,
+            width: this.image_size,
+            height: this.image_size,
+            class: 'bar-img',
+            href: this.task.thumbnail,
+            clipPath: 'clip_' + this.task.id,
+            append_to: this.bar_group
+        });
+    }
+
 
     draw_resize_handles() {
         if (this.invalid) return;
@@ -159,14 +222,14 @@ export default class Bar {
 
     get_progress_polygon_points() {
         const bar_progress = this.$bar_progress;
-        return [
+        return bar_progress && [
             bar_progress.getEndX() - 5,
             bar_progress.getY() + bar_progress.getHeight(),
             bar_progress.getEndX() + 5,
             bar_progress.getY() + bar_progress.getHeight(),
             bar_progress.getEndX(),
             bar_progress.getY() + bar_progress.getHeight() - 8.66
-        ];
+        ] || [];
     }
 
     bind() {
@@ -232,9 +295,46 @@ export default class Bar {
             this.update_attr(bar, 'width', width);
         }
         this.update_label_position();
-        this.update_handle_position();
+
+        if (this.gantt.options.resizing) {
+            this.update_handle_position();
+        } 
+
         this.update_progressbar_position();
         this.update_arrow_position();
+    }
+
+    update_label_position_on_horizontal_scroll({ x, sx }) {
+        
+        const container = document.querySelector('.gantt-container');
+        const label = this.group.querySelector('.bar-label');
+        const img = this.group.querySelector('.bar-img') || '';
+        const img_mask = this.bar_group.querySelector('.img_mask') || '';
+
+        let barWidthLimit = this.$bar.getX() + this.$bar.getWidth();
+        let newLabelX = label.getX() + x;
+        let newImgX = img && img.getX() + x || 0;
+        let imgWidth = img && img.getBBox().width + 7 || 7;
+        let labelEndX = newLabelX + label.getBBox().width + 7;
+        let viewportCentral = sx + container.clientWidth / 2;
+
+        if (label.classList.contains('big')) return;
+        
+        if (labelEndX < barWidthLimit && x > 0 && labelEndX < viewportCentral) {
+            label.setAttribute('x', newLabelX );
+            if (img) { 
+                img.setAttribute('x', newImgX);
+                img_mask.setAttribute('x', newImgX);
+            }
+        } else if ( (newLabelX - imgWidth)  > this.$bar.getX() && x < 0 && labelEndX > viewportCentral ){
+            label.setAttribute('x', newLabelX );
+            if (img) {
+                img.setAttribute('x', newImgX);
+                img_mask.setAttribute('x', newImgX);
+            }
+            
+        }
+        
     }
 
     date_changed() {
@@ -360,23 +460,41 @@ export default class Bar {
     }
 
     update_progressbar_position() {
-        this.$bar_progress.setAttribute('x', this.$bar.getX());
-        this.$bar_progress.setAttribute(
+        this.$bar_progress && this.$bar_progress.setAttribute('x', this.$bar.getX());
+        this.$bar_progress && this.$bar_progress.setAttribute(
             'width',
             this.$bar.getWidth() * (this.task.progress / 100)
         );
     }
 
     update_label_position() {
+        const img_mask = this.bar_group.querySelector('.img_mask') || '';
         const bar = this.$bar,
-            label = this.group.querySelector('.bar-label');
+            label = this.group.querySelector('.bar-label'),
+            img = this.group.querySelector('.bar-img');
+        
+        let padding = 5;
+        let x_offset_label_img = this.image_size + 10;
 
         if (label.getBBox().width > bar.getWidth()) {
             label.classList.add('big');
-            label.setAttribute('x', bar.getX() + bar.getWidth() + 5);
+            if (img) {
+                img.setAttribute('x', bar.getX() + bar.getWidth() + padding );
+                img_mask.setAttribute('x', bar.getX() + bar.getWidth() + padding );
+                label.setAttribute('x', bar.getX() + bar.getWidth() + x_offset_label_img);
+            } else {
+                label.setAttribute('x', bar.getX() + bar.getWidth() + padding);
+            }
         } else {
             label.classList.remove('big');
-            label.setAttribute('x', bar.getX() + bar.getWidth() / 2);
+            
+            if (img) {
+                img.setAttribute('x', bar.getX()  + padding);
+                img_mask.setAttribute('x', bar.getX()  + padding);
+                label.setAttribute('x', bar.getX() + x_offset_label_img);
+            } else {
+                label.setAttribute('x', bar.getX() + padding);
+            }
         }
     }
 

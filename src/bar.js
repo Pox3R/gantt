@@ -275,6 +275,7 @@ export default class Bar {
     }
 
     update_bar_position({ x = null, width = null }) {
+        this.gantt.hide_popup();
         const bar = this.$bar;
         if (x) {
             // get all x values of parent task
@@ -499,6 +500,7 @@ export default class Bar {
     }
 
     update_handle_position() {
+        this.gantt.hide_popup();
         const bar = this.$bar;
         this.handle_group
             .querySelector('.handle.left')

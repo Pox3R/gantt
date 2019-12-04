@@ -28,6 +28,8 @@ export default class Popup {
         }
         const target_element = options.target_element;
 
+        this.parent.style.display = 'block';
+
         if (this.custom_html) {
             let html = this.custom_html(options.task);
             html += '<div class="pointer"></div>';
@@ -39,7 +41,6 @@ export default class Popup {
             this.subtitle.innerHTML = options.subtitle;
             this.parent.style.width = this.parent.clientWidth + 'px';
         }
-
         // set position
         let position_meta;
         if (target_element instanceof HTMLElement) {
@@ -63,6 +64,7 @@ export default class Popup {
     }
 
     hide() {
+        this.parent.style.display = 'none';
         this.parent.style.opacity = 0;
     }
 }
